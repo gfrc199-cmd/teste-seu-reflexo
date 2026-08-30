@@ -1,0 +1,415 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jogo de Reflexo — Engenharia Elétrica</title>
+<style>
+  /* Tema: placa de circuito impresso — verde solder-mask, dourado dos contatos de cobre,
+     ciano de trilha "ativa" pro estado de GO. Ligado direto ao assunto (EE), não um
+     dark-mode genérico. */
+  :root {
+    --bg: #f4f7f1;
+    --panel: #ffffff;
+    --panel-border: #cfe0d2;
+    --accent: #b5761f;
+    --accent2: #0c8c7a;
+    --text: #17281d;
+    --muted: #5b7364;
+    --danger: #c93838;
+    --good: #1f8a44;
+    --font-display: ui-sans-serif, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    --font-mono: ui-monospace, "Cascadia Code", "Cascadia Mono", "SF Mono", Consolas, "Roboto Mono", monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0a1f14;
+      --panel: #102a1c;
+      --panel-border: #234a34;
+      --accent: #e8a33d;
+      --accent2: #00d9bd;
+      --text: #eef3ea;
+      --muted: #7fa08c;
+      --danger: #ff6b6b;
+      --good: #6fe38a;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0a1f14; --panel: #102a1c; --panel-border: #234a34;
+    --accent: #e8a33d; --accent2: #00d9bd; --text: #eef3ea;
+    --muted: #7fa08c; --danger: #ff6b6b; --good: #6fe38a;
+  }
+  :root[data-theme="light"] {
+    --bg: #f4f7f1; --panel: #ffffff; --panel-border: #cfe0d2;
+    --accent: #b5761f; --accent2: #0c8c7a; --text: #17281d;
+    --muted: #5b7364; --danger: #c93838; --good: #1f8a44;
+  }
+
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    background: var(--bg); color: var(--text);
+    font-family: var(--font-display);
+    overflow: hidden;
+  }
+  body {
+    background-image: radial-gradient(var(--panel-border) 1px, transparent 1px);
+    background-size: 28px 28px;
+    background-position: -14px -14px;
+  }
+  #app {
+    height: 100vh; width: 100vw;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    text-align: center;
+    padding: 3vh 4vw;
+  }
+  h1.title {
+    font-size: 5vh; margin: 0 0 .6vh 0; letter-spacing: .5px;
+    font-weight: 800; text-wrap: balance;
+  }
+  h1.title span { color: var(--accent); }
+  .subtitle {
+    color: var(--muted); font-size: 1.9vh; margin-bottom: 3.5vh;
+    text-transform: uppercase; letter-spacing: 2.5px; font-weight: 600;
+  }
+
+  .btn {
+    background: var(--accent); color: #1b1206; border: none;
+    font-family: var(--font-display);
+    font-size: 2.4vh; font-weight: 700; padding: 1.5vh 2.8vw;
+    border-radius: 10px; cursor: pointer; margin: .6vh;
+    transition: transform .12s ease, box-shadow .12s ease;
+  }
+  .btn:hover { transform: translateY(-2px); box-shadow: 0 6px 0 0 rgba(0,0,0,.12); }
+  .btn:active { transform: translateY(0); box-shadow: none; }
+  .btn:focus-visible { outline: 3px solid var(--accent2); outline-offset: 3px; }
+  .btn.secondary {
+    background: transparent; color: var(--text);
+    border: 2px solid var(--panel-border);
+  }
+  .btn.ghost {
+    background: transparent; color: var(--muted);
+    border: 1px dashed var(--panel-border); font-size: 1.9vh; padding: 1vh 2vw;
+  }
+  .btn:disabled { opacity: .4; cursor: not-allowed; }
+
+  input.name-input {
+    font-family: var(--font-display);
+    font-size: 2.4vh; padding: 1.3vh 1.4vw; border-radius: 8px;
+    border: 2px solid var(--panel-border); background: var(--bg); color: var(--text);
+    margin: .8vh; width: 38vw; text-align: center;
+  }
+  input.name-input:focus-visible { outline: none; border-color: var(--accent2); }
+
+  .players-row { display: flex; gap: 2.4vw; justify-content: center; flex-wrap: wrap; }
+  .player-box {
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 2.2vh 2.4vw; min-width: 19vw;
+  }
+  .player-label {
+    color: var(--muted); font-size: 1.8vh; margin-bottom: .6vh;
+    text-transform: uppercase; letter-spacing: 1.5px; font-weight: 600;
+  }
+
+  .status-big {
+    font-size: 7.5vh; font-weight: 800; margin: 2vh 0;
+    font-variant-numeric: tabular-nums;
+  }
+  .status-big.wait { color: var(--muted); }
+  .status-big.go { color: var(--good); }
+  .status-big.false-start { color: var(--danger); }
+
+  .reaction-time {
+    font-family: var(--font-mono);
+    font-size: 10.5vh; font-weight: 700; color: var(--accent);
+    line-height: 1; font-variant-numeric: tabular-nums;
+  }
+  .reaction-ms { font-family: var(--font-display); font-size: 2.6vh; color: var(--muted); }
+
+  table.leaderboard {
+    border-collapse: collapse; margin-top: 2.2vh; width: 58vw; max-width: 900px;
+  }
+  table.leaderboard th, table.leaderboard td {
+    padding: 1vh 1.2vw; font-size: 2.2vh; text-align: left;
+  }
+  table.leaderboard th {
+    color: var(--muted); border-bottom: 2px solid var(--panel-border);
+    font-weight: 600; text-transform: uppercase; letter-spacing: 1.5px; font-size: 1.6vh;
+  }
+  table.leaderboard td { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+  table.leaderboard tr:nth-child(1) td { color: var(--accent); font-weight: 700; font-size: 2.6vh; }
+  table.leaderboard tr:not(:last-child) td { border-bottom: 1px solid var(--panel-border); }
+  table.leaderboard td.rank { color: var(--muted); width: 3vw; }
+  table.leaderboard td.time { text-align: right; }
+  table.leaderboard td.name-cell { font-family: var(--font-display); }
+
+  .conn-status {
+    position: fixed; top: 2vh; right: 3vw; font-size: 1.7vh; color: var(--muted);
+    display: flex; align-items: center; gap: .6vh;
+  }
+  .conn-dot {
+    display: inline-block; width: 1.2vh; height: 1.2vh; border-radius: 50%;
+    background: var(--danger);
+  }
+  .conn-dot.on { background: var(--good); }
+
+  .hidden { display: none !important; }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .flash-go { animation: flash .5s ease 2; }
+  }
+  @keyframes flash {
+    0%, 100% { background-color: var(--bg); }
+    50% { background-color: color-mix(in srgb, var(--good) 18%, var(--bg)); }
+  }
+</style>
+</head>
+<body>
+<div class="conn-status"><span id="connDot" class="conn-dot"></span><span id="connText">Arduino desconectado</span></div>
+
+<div id="app">
+
+  <!-- TELA: INICIAL / LEADERBOARD -->
+  <div id="screen-idle">
+    <h1 class="title">Teste seu <span>REFLEXO</span></h1>
+    <div class="subtitle">Engenharia Elétrica — Mundo das Profissões</div>
+
+    <div id="preConnect">
+      <button class="btn" id="btnConnect">Conectar Arduino</button><br>
+      <button class="btn ghost" id="btnSimulate">Simular sem Arduino (teste)</button>
+    </div>
+
+    <div id="postConnect" class="hidden">
+      <div class="players-row">
+        <div class="player-box">
+          <div class="player-label">Jogador 1</div>
+          <input class="name-input" id="name1" placeholder="Nome" maxlength="16">
+        </div>
+        <div class="player-box hidden" id="p2box">
+          <div class="player-label">Jogador 2</div>
+          <input class="name-input" id="name2" placeholder="Nome" maxlength="16">
+        </div>
+      </div>
+      <div>
+        <button class="btn secondary" id="btnToggle2p">+ Jogador 2</button>
+      </div>
+      <div>
+        <button class="btn" id="btnStart">Começar</button>
+      </div>
+    </div>
+
+    <table class="leaderboard">
+      <thead><tr><th>#</th><th>Nome</th><th class="time">Tempo</th></tr></thead>
+      <tbody id="leaderboardBody"></tbody>
+    </table>
+  </div>
+
+  <!-- TELA: JOGO -->
+  <div id="screen-game" class="hidden">
+    <div class="status-big wait" id="statusText">Prepare-se...</div>
+    <div class="players-row" id="gameResults"></div>
+  </div>
+
+</div>
+
+<script>
+const LB_KEY = 'reflexo_leaderboard_v1';
+let port, reader, readableClosed;
+let twoPlayers = false;
+let roundNames = [];
+let simulating = false;
+
+const $ = id => document.getElementById(id);
+
+function loadLeaderboard() {
+  try { return JSON.parse(localStorage.getItem(LB_KEY)) || []; }
+  catch { return []; }
+}
+function saveLeaderboard(list) {
+  localStorage.setItem(LB_KEY, JSON.stringify(list));
+}
+function addToLeaderboard(name, timeMs) {
+  const list = loadLeaderboard();
+  list.push({ name: name || 'Anônimo', time: timeMs, date: new Date().toISOString() });
+  list.sort((a,b) => a.time - b.time);
+  saveLeaderboard(list.slice(0, 50));
+  renderLeaderboard();
+}
+function renderLeaderboard() {
+  const list = loadLeaderboard().slice(0, 10);
+  const body = $('leaderboardBody');
+  body.innerHTML = list.map((r,i) => `
+    <tr>
+      <td class="rank">${i+1}</td>
+      <td class="name-cell">${escapeHtml(r.name)}</td>
+      <td class="time">${r.time} ms</td>
+    </tr>`).join('');
+  if (list.length === 0) {
+    body.innerHTML = '<tr><td colspan="3" style="color:var(--muted)">Ninguém jogou ainda — seja o primeiro!</td></tr>';
+  }
+}
+function escapeHtml(s) {
+  return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+// --- Web Serial ---
+async function connectArduino() {
+  if (!('serial' in navigator)) {
+    alert('Seu navegador não suporta Web Serial. Use Chrome ou Edge no computador.');
+    return;
+  }
+  try {
+    port = await navigator.serial.requestPort();
+    await port.open({ baudRate: 9600 });
+    simulating = false;
+    setConnected(true);
+    readLoop();
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+function connectSimulated() {
+  simulating = true;
+  setConnected(true);
+}
+
+function setConnected(ok) {
+  $('connDot').classList.toggle('on', ok);
+  $('connText').textContent = ok ? (simulating ? 'Modo simulação (sem Arduino)' : 'Arduino conectado') : 'Arduino desconectado';
+  $('preConnect').classList.toggle('hidden', ok);
+  $('postConnect').classList.toggle('hidden', !ok);
+}
+
+async function readLoop() {
+  const decoder = new TextDecoderStream();
+  readableClosed = port.readable.pipeTo(decoder.writable);
+  reader = decoder.readable.getReader();
+  let buffer = '';
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += value;
+      let idx;
+      while ((idx = buffer.indexOf('\n')) >= 0) {
+        const line = buffer.slice(0, idx).trim();
+        buffer = buffer.slice(idx + 1);
+        if (line) handleSerialLine(line);
+      }
+    }
+  } catch (err) {
+    console.error('Erro na leitura serial:', err);
+    setConnected(false);
+  }
+}
+
+async function sendCommand(cmd) {
+  if (simulating) { simulateRound(cmd); return; }
+  const writer = port.writable.getWriter();
+  await writer.write(new TextEncoder().encode(cmd + '\n'));
+  writer.releaseLock();
+}
+
+function simulateRound(cmd) {
+  const n = Number(cmd.split(':')[1]) || 1;
+  const wait = 1200 + Math.random() * 1500; // mais curto que o real, só pra pré-visualizar
+  setTimeout(() => {
+    handleSerialLine('LIGHT_ON');
+    for (let i = 1; i <= n; i++) {
+      const ms = 180 + Math.floor(Math.random() * 320);
+      setTimeout(() => handleSerialLine(`RESULT:P${i}:${ms}`), 300 + i * 400 + Math.random() * 200);
+    }
+  }, wait);
+}
+
+function handleSerialLine(line) {
+  if (line === 'LIGHT_ON') {
+    onLightOn();
+  } else if (line.startsWith('RESULT:P')) {
+    const [, player, ms] = line.match(/RESULT:P(\d):(\d+)/) || [];
+    if (player) onResult(Number(player), Number(ms));
+  } else if (line.startsWith('FALSE_START:P')) {
+    const [, player] = line.match(/FALSE_START:P(\d)/) || [];
+    onFalseStart(Number(player));
+  }
+}
+
+// --- Fluxo do jogo ---
+let pendingResults = {};
+let expectedPlayers = 1;
+
+function toggle2p() {
+  twoPlayers = !twoPlayers;
+  $('p2box').classList.toggle('hidden', !twoPlayers);
+  $('btnToggle2p').textContent = twoPlayers ? '- Jogador 2' : '+ Jogador 2';
+}
+
+function startRound() {
+  roundNames = [ $('name1').value.trim() || 'Jogador 1' ];
+  if (twoPlayers) roundNames.push($('name2').value.trim() || 'Jogador 2');
+  expectedPlayers = roundNames.length;
+  pendingResults = {};
+
+  $('screen-idle').classList.add('hidden');
+  $('screen-game').classList.remove('hidden');
+  $('statusText').className = 'status-big wait';
+  $('statusText').textContent = 'Prepare-se...';
+  $('gameResults').innerHTML = '';
+
+  sendCommand('START:' + expectedPlayers);
+}
+
+function onLightOn() {
+  document.body.classList.add('flash-go');
+  setTimeout(() => document.body.classList.remove('flash-go'), 1000);
+  $('statusText').className = 'status-big go';
+  $('statusText').textContent = 'AGORA!';
+}
+
+function onFalseStart(playerNum) {
+  const name = roundNames[playerNum - 1] || ('Jogador ' + playerNum);
+  $('statusText').className = 'status-big false-start';
+  $('statusText').textContent = name + ' saiu cedo demais!';
+  setTimeout(backToIdle, 2500);
+}
+
+function onResult(playerNum, ms) {
+  pendingResults[playerNum] = ms;
+  const name = roundNames[playerNum - 1] || ('Jogador ' + playerNum);
+  addToLeaderboard(name, ms);
+
+  const box = document.createElement('div');
+  box.className = 'player-box';
+  box.innerHTML = `
+    <div class="player-label">${escapeHtml(name)}</div>
+    <div class="reaction-time">${ms}<span class="reaction-ms"> ms</span></div>`;
+  $('gameResults').appendChild(box);
+
+  if (Object.keys(pendingResults).length >= expectedPlayers) {
+    $('statusText').className = 'status-big';
+    $('statusText').textContent = expectedPlayers > 1
+      ? (pendingResults[1] < pendingResults[2] ? (roundNames[0] + ' venceu!') : (roundNames[1] + ' venceu!'))
+      : 'Resultado registrado!';
+    setTimeout(backToIdle, 4000);
+  }
+}
+
+function backToIdle() {
+  $('screen-game').classList.add('hidden');
+  $('screen-idle').classList.remove('hidden');
+  $('name1').value = '';
+  $('name2').value = '';
+}
+
+// --- Eventos ---
+$('btnConnect').addEventListener('click', connectArduino);
+$('btnSimulate').addEventListener('click', connectSimulated);
+$('btnToggle2p').addEventListener('click', toggle2p);
+$('btnStart').addEventListener('click', startRound);
+
+renderLeaderboard();
+</script>
+</body>
+</html>
