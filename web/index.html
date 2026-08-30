@@ -154,6 +154,14 @@
   }
   .conn-dot.on { background: var(--good); }
 
+  .sound-toggle {
+    position: fixed; top: 2vh; left: 3vw; z-index: 5;
+    background: var(--panel); border: 1px solid var(--panel-border); color: var(--text);
+    font-size: 2.2vh; line-height: 1; padding: .9vh 1.1vh; border-radius: 50%;
+    cursor: pointer;
+  }
+  .sound-toggle:focus-visible { outline: 3px solid var(--accent2); outline-offset: 2px; }
+
   .hidden { display: none !important; }
 
   /* Painel lateral "vitrine" — só cabe em telas largas (a TV do evento),
@@ -202,6 +210,7 @@
 </head>
 <body>
 <div class="conn-status"><span id="connDot" class="conn-dot"></span><span id="connText">Arduino desconectado</span></div>
+<button class="sound-toggle" id="btnMute" title="Ativar ou desativar som" aria-label="Ativar ou desativar som">🔊</button>
 
 <div id="app">
 
@@ -276,6 +285,11 @@
     </div>
 
     <div class="showcase-card">
+      <div class="showcase-eyebrow">Por que a espera é aleatória?</div>
+      <p class="showcase-caption">O Arduino sorteia de 2 a 6 segundos antes de acender o LED, então ninguém consegue "chutar" o momento — só reagir de verdade. Reação humana média: ~200–250 ms. O circuito mede esse tempo com resolução de 1 milissegundo.</p>
+    </div>
+
+    <div class="showcase-card">
       <div class="showcase-eyebrow">Veja o código</div>
       <div class="qr-box">
         <svg viewBox="0 0 37 37" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="QR code para o repositório do projeto no GitHub">
@@ -302,6 +316,50 @@ let roundNames = [];
 let simulating = false;
 
 const $ = id => document.getElementById(id);
+
+// --- Som (Web Audio API, sem arquivos externos) ---
+let audioCtx = null;
+let muted = false;
+try { muted = localStorage.getItem('reflexo_muted') === '1'; } catch {}
+
+function ensureAudio() {
+  if (muted) return null;
+  if (!audioCtx) {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return null;
+    audioCtx = new Ctx();
+  }
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  return audioCtx;
+}
+
+function beep({ freq = 880, duration = 120, type = 'square', gain = 0.15, sweepTo = null } = {}) {
+  const ctx = ensureAudio();
+  if (!ctx) return;
+  const osc = ctx.createOscillator();
+  const g = ctx.createGain();
+  osc.type = type;
+  osc.frequency.setValueAtTime(freq, ctx.currentTime);
+  if (sweepTo) osc.frequency.exponentialRampToValueAtTime(sweepTo, ctx.currentTime + duration / 1000);
+  g.gain.setValueAtTime(gain, ctx.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration / 1000);
+  osc.connect(g).connect(ctx.destination);
+  osc.start();
+  osc.stop(ctx.currentTime + duration / 1000 + 0.02);
+}
+
+function soundGo() { beep({ freq: 1046, duration: 140, type: 'square', gain: 0.18 }); }
+function soundHit() { beep({ freq: 660, duration: 80, type: 'sine', gain: 0.12 }); }
+function soundFalseStart() { beep({ freq: 180, duration: 420, type: 'sawtooth', gain: 0.2, sweepTo: 80 }); }
+function soundWin() {
+  [523, 659, 784].forEach((freq, i) => setTimeout(() => beep({ freq, duration: 150, type: 'triangle', gain: 0.15 }), i * 130));
+}
+
+function setMuted(v) {
+  muted = v;
+  try { localStorage.setItem('reflexo_muted', v ? '1' : '0'); } catch {}
+  $('btnMute').textContent = v ? '🔇' : '🔊';
+}
 
 function loadLeaderboard() {
   try { return JSON.parse(localStorage.getItem(LB_KEY)) || []; }
@@ -340,6 +398,7 @@ async function connectArduino() {
     alert('Seu navegador não suporta Web Serial. Use Chrome ou Edge no computador.');
     return;
   }
+  ensureAudio();
   try {
     port = await navigator.serial.requestPort();
     await port.open({ baudRate: 9600 });
@@ -352,6 +411,7 @@ async function connectArduino() {
 }
 
 function connectSimulated() {
+  ensureAudio();
   simulating = true;
   setConnected(true);
 }
@@ -428,6 +488,7 @@ function toggle2p() {
 }
 
 function startRound() {
+  ensureAudio();
   roundNames = [ $('name1').value.trim() || 'Jogador 1' ];
   if (twoPlayers) roundNames.push($('name2').value.trim() || 'Jogador 2');
   expectedPlayers = roundNames.length;
@@ -444,6 +505,7 @@ function startRound() {
 }
 
 function onLightOn() {
+  soundGo();
   document.body.classList.add('flash-go');
   setTimeout(() => document.body.classList.remove('flash-go'), 1000);
   $('statusText').className = 'status-big go';
@@ -451,6 +513,7 @@ function onLightOn() {
 }
 
 function onFalseStart(playerNum) {
+  soundFalseStart();
   const name = roundNames[playerNum - 1] || ('Jogador ' + playerNum);
   $('statusText').className = 'status-big false-start';
   $('statusText').textContent = name + ' saiu cedo demais!';
@@ -458,6 +521,7 @@ function onFalseStart(playerNum) {
 }
 
 function onResult(playerNum, ms) {
+  soundHit();
   pendingResults[playerNum] = ms;
   const name = roundNames[playerNum - 1] || ('Jogador ' + playerNum);
   addToLeaderboard(name, ms);
@@ -474,6 +538,7 @@ function onResult(playerNum, ms) {
     $('statusText').textContent = expectedPlayers > 1
       ? (pendingResults[1] < pendingResults[2] ? (roundNames[0] + ' venceu!') : (roundNames[1] + ' venceu!'))
       : 'Resultado registrado!';
+    if (expectedPlayers > 1) soundWin();
     setTimeout(backToIdle, 4000);
   }
 }
@@ -491,7 +556,9 @@ $('btnConnect').addEventListener('click', connectArduino);
 $('btnSimulate').addEventListener('click', connectSimulated);
 $('btnToggle2p').addEventListener('click', toggle2p);
 $('btnStart').addEventListener('click', startRound);
+$('btnMute').addEventListener('click', () => setMuted(!muted));
 
+$('btnMute').textContent = muted ? '🔇' : '🔊';
 renderLeaderboard();
 </script>
 </body>
