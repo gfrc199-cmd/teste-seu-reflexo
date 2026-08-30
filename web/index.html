@@ -207,6 +207,34 @@
   }
   .sound-toggle:focus-visible { outline: 3px solid var(--accent2); outline-offset: 2px; }
 
+  /* Contador de visitantes — Arduino próprio (sensores da porta), sempre
+     visível (mesmo durante uma partida), clica pra conectar. */
+  .visitor-badge {
+    position: fixed; bottom: 2vh; left: 3vw; z-index: 5;
+    display: flex; align-items: center; gap: .7vh;
+    background: var(--panel); border: 1px solid var(--panel-border); color: var(--muted);
+    font-family: var(--font-display); font-size: 1.6vh; font-weight: 700;
+    padding: .9vh 1.4vw; border-radius: 999px; cursor: pointer;
+  }
+  .visitor-badge:focus-visible { outline: 3px solid var(--accent2); outline-offset: 2px; }
+  .visitor-dot {
+    display: inline-block; width: 1.1vh; height: 1.1vh; border-radius: 50%;
+    background: var(--danger);
+  }
+  .visitor-badge.connected { color: var(--text); }
+  .visitor-badge.connected .visitor-dot { background: var(--good); }
+  #visitorCount {
+    font-family: var(--font-mono); color: var(--accent); font-variant-numeric: tabular-nums;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .visitor-badge.pulse { animation: visitor-pulse .6s ease; }
+  }
+  @keyframes visitor-pulse {
+    0% { transform: scale(1); }
+    30% { transform: scale(1.12); box-shadow: 0 0 0 5px color-mix(in srgb, var(--good) 35%, transparent); }
+    100% { transform: scale(1); }
+  }
+
   .hidden { display: none !important; }
 
   /* Painel lateral "vitrine" — ocupa a metade direita da tela (só em
@@ -267,6 +295,9 @@
 <div id="circuitBg" aria-hidden="true"></div>
 <div class="conn-status"><span id="connDot" class="conn-dot"></span><span id="connText">Arduino desconectado</span></div>
 <button class="sound-toggle" id="btnMute" title="Ativar ou desativar som" aria-label="Ativar ou desativar som">🔊</button>
+<button id="visitorBadge" class="visitor-badge" title="Clique pra conectar o Arduino do contador de visitantes">
+  <span id="visitorDot" class="visitor-dot"></span> Visitantes hoje <span id="visitorCount">0</span>
+</button>
 
 <div id="app">
 
@@ -319,9 +350,14 @@
         <line x1="58" y1="30" x2="80" y2="30" stroke="var(--danger)" stroke-width="2"/>
         <polyline points="80,30 84,24 92,36 100,24 108,36 112,30" fill="none" stroke="var(--danger)" stroke-width="2" stroke-linejoin="round"/>
         <line x1="112" y1="30" x2="132" y2="30" stroke="var(--danger)" stroke-width="2"/>
-        <path d="M132,21 L132,39 L149,30 Z" fill="none" stroke="var(--danger)" stroke-width="2" stroke-linejoin="round"/>
+        <path d="M132,21 L132,39 L149,30 Z" fill="var(--danger)" stroke="var(--danger)" stroke-width="2" stroke-linejoin="round"/>
         <line x1="149" y1="21" x2="149" y2="39" stroke="var(--danger)" stroke-width="2"/>
         <line x1="149" y1="30" x2="246" y2="30" stroke="var(--danger)" stroke-width="2"/>
+        <!-- setinhas de emissão de luz — sem elas é só um diodo, não um LED -->
+        <g stroke="var(--danger)" stroke-width="1.3" stroke-linecap="round" fill="none">
+          <path d="M134,19 L141,8 M137,8 L141,8 L141,12"/>
+          <path d="M140,23 L147,12 M143,12 L147,12 L147,16"/>
+        </g>
         <text x="96" y="16" font-family="var(--font-mono)" font-weight="700" font-size="7" text-anchor="middle" fill="var(--danger)">R1 · 220Ω</text>
         <text x="142" y="47" font-family="var(--font-mono)" font-weight="700" font-size="7" text-anchor="middle" fill="var(--danger)">LED1</text>
 
@@ -339,9 +375,13 @@
         <line x1="58" y1="108" x2="80" y2="108" stroke="var(--good)" stroke-width="2"/>
         <polyline points="80,108 84,102 92,114 100,102 108,114 112,108" fill="none" stroke="var(--good)" stroke-width="2" stroke-linejoin="round"/>
         <line x1="112" y1="108" x2="132" y2="108" stroke="var(--good)" stroke-width="2"/>
-        <path d="M132,99 L132,117 L149,108 Z" fill="none" stroke="var(--good)" stroke-width="2" stroke-linejoin="round"/>
+        <path d="M132,99 L132,117 L149,108 Z" fill="var(--good)" stroke="var(--good)" stroke-width="2" stroke-linejoin="round"/>
         <line x1="149" y1="99" x2="149" y2="117" stroke="var(--good)" stroke-width="2"/>
         <line x1="149" y1="108" x2="246" y2="108" stroke="var(--good)" stroke-width="2"/>
+        <g stroke="var(--good)" stroke-width="1.3" stroke-linecap="round" fill="none">
+          <path d="M134,97 L141,86 M137,86 L141,86 L141,90"/>
+          <path d="M140,101 L147,90 M143,90 L147,90 L147,94"/>
+        </g>
         <text x="96" y="94" font-family="var(--font-mono)" font-weight="700" font-size="7" text-anchor="middle" fill="var(--good)">R2 · 220Ω</text>
         <text x="142" y="125" font-family="var(--font-mono)" font-weight="700" font-size="7" text-anchor="middle" fill="var(--good)">LED2</text>
 
@@ -664,14 +704,89 @@ function scheduleAttract() {
   attractTimer = setTimeout(() => document.body.classList.add('attract'), ATTRACT_DELAY_MS);
 }
 
+// --- Contador de visitantes: Arduino próprio (sensores da porta), conexão
+// serial separada do jogo — não depende de nada mais da página pra rodar. ---
+const VISITORS_KEY = 'reflexo_visitantes_v1';
+let visitorPort = null;
+let visitorCount = 0;
+
+function todayStr() {
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+function loadVisitors() {
+  try {
+    const data = JSON.parse(localStorage.getItem(VISITORS_KEY));
+    if (data && data.date === todayStr()) return data.count;
+  } catch {}
+  return 0;
+}
+function saveVisitors(count) {
+  try { localStorage.setItem(VISITORS_KEY, JSON.stringify({ date: todayStr(), count })); } catch {}
+}
+function renderVisitorCount() {
+  $('visitorCount').textContent = visitorCount;
+}
+function pulseVisitorBadge() {
+  $('visitorBadge').classList.add('pulse');
+  setTimeout(() => $('visitorBadge').classList.remove('pulse'), 600);
+}
+
+async function connectVisitorCounter() {
+  if (!('serial' in navigator)) {
+    alert('Seu navegador não suporta Web Serial. Use Chrome ou Edge no computador.');
+    return;
+  }
+  try {
+    visitorPort = await navigator.serial.requestPort();
+    await visitorPort.open({ baudRate: 9600 });
+    $('visitorBadge').classList.add('connected');
+    visitorReadLoop();
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+async function visitorReadLoop() {
+  const decoder = new TextDecoderStream();
+  const readableClosed = visitorPort.readable.pipeTo(decoder.writable);
+  const reader = decoder.readable.getReader();
+  let buffer = '';
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += value;
+      let idx;
+      while ((idx = buffer.indexOf('\n')) >= 0) {
+        const line = buffer.slice(0, idx).trim();
+        buffer = buffer.slice(idx + 1);
+        if (line === 'ENTRY') {
+          visitorCount++;
+          saveVisitors(visitorCount);
+          renderVisitorCount();
+          pulseVisitorBadge();
+        }
+        // EXIT é ignorado de propósito — isso conta entradas do dia, não presença ao vivo.
+      }
+    }
+  } catch (err) {
+    console.error('Erro na leitura do contador de visitantes:', err);
+    $('visitorBadge').classList.remove('connected');
+  }
+}
+
 // --- Eventos ---
 $('btnConnect').addEventListener('click', connectArduino);
 $('btnSimulate').addEventListener('click', connectSimulated);
 $('btnToggle2p').addEventListener('click', toggle2p);
 $('btnStart').addEventListener('click', startRound);
 $('btnMute').addEventListener('click', () => setMuted(!muted));
+$('visitorBadge').addEventListener('click', () => { if (!visitorPort) connectVisitorCounter(); });
 
 $('btnMute').textContent = muted ? '🔇' : '🔊';
+visitorCount = loadVisitors();
+renderVisitorCount();
 renderLeaderboard();
 scheduleAttract();
 </script>
