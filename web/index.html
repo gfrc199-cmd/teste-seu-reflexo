@@ -93,6 +93,15 @@
     font-weight: 800; text-wrap: balance;
   }
   h1.title span { color: var(--accent); }
+  /* Modo atração: se ninguém joga por um tempo, o título pulsa devagar
+     pra chamar atenção de quem passa andando perto da bancada. */
+  @media (prefers-reduced-motion: no-preference) {
+    body.attract h1.title { animation: attract-pulse 1.6s ease-in-out infinite; }
+  }
+  @keyframes attract-pulse {
+    0%, 100% { transform: scale(1); text-shadow: 0 0 0 transparent; }
+    50% { transform: scale(1.045); text-shadow: 0 0 28px var(--accent2); }
+  }
   .subtitle {
     color: var(--muted); font-size: 1.9vh; margin-bottom: 3.5vh;
     text-transform: uppercase; letter-spacing: 2.5px; font-weight: 600;
@@ -553,6 +562,7 @@ function toggle2p() {
 }
 
 function startRound() {
+  cancelAttract();
   ensureAudio();
   roundNames = [ $('name1').value.trim() || 'Jogador 1' ];
   if (twoPlayers) roundNames.push($('name2').value.trim() || 'Jogador 2');
@@ -619,6 +629,19 @@ function backToIdle() {
   $('showcase').classList.remove('hidden');
   $('name1').value = '';
   $('name2').value = '';
+  scheduleAttract();
+}
+
+// --- Modo atração: chama atenção de quem passa perto se ninguém jogar ---
+const ATTRACT_DELAY_MS = 25000;
+let attractTimer = null;
+function cancelAttract() {
+  clearTimeout(attractTimer);
+  document.body.classList.remove('attract');
+}
+function scheduleAttract() {
+  cancelAttract();
+  attractTimer = setTimeout(() => document.body.classList.add('attract'), ATTRACT_DELAY_MS);
 }
 
 // --- Eventos ---
@@ -630,6 +653,7 @@ $('btnMute').addEventListener('click', () => setMuted(!muted));
 
 $('btnMute').textContent = muted ? '🔇' : '🔊';
 renderLeaderboard();
+scheduleAttract();
 </script>
 </body>
 </html>
