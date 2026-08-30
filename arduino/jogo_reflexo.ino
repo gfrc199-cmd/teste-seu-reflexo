@@ -57,7 +57,7 @@ void beginRound(int players) {
   pressed[1] = false;
   digitalWrite(LED_PINS[0], LOW);
   digitalWrite(LED_PINS[1], LOW);
-  waitDuration = random(2000, 6000); // espera aleatoria de 2 a 6s, evita "chutar" o momento
+  waitDuration = random(3000, 8000); // espera aleatoria de 3 a 8s, evita "chutar" o momento
   stateStartTime = millis();
   state = WAITING;
 }
