@@ -131,6 +131,18 @@
     background: var(--panel); border: 1px solid var(--panel-border);
     border-radius: 14px; padding: 2.2vh 2.4vw; min-width: 19vw;
   }
+  .player-box.new-record { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+  @media (prefers-reduced-motion: no-preference) {
+    .player-box.new-record { animation: record-pulse 1.2s ease infinite; }
+  }
+  @keyframes record-pulse {
+    0%, 100% { box-shadow: 0 0 0 2px var(--accent); }
+    50% { box-shadow: 0 0 22px 5px var(--accent); }
+  }
+  .record-badge {
+    color: var(--accent); font-weight: 800; font-size: 1.7vh;
+    text-transform: uppercase; letter-spacing: 1px; margin-bottom: .8vh;
+  }
   .player-label {
     color: var(--muted); font-size: 1.8vh; margin-bottom: .6vh;
     text-transform: uppercase; letter-spacing: 1.5px; font-weight: 600;
@@ -404,6 +416,9 @@ function soundFalseStart() { beep({ freq: 180, duration: 420, type: 'sawtooth', 
 function soundWin() {
   [523, 659, 784].forEach((freq, i) => setTimeout(() => beep({ freq, duration: 150, type: 'triangle', gain: 0.15 }), i * 130));
 }
+function soundRecord() {
+  [523, 659, 784, 1046, 1318].forEach((freq, i) => setTimeout(() => beep({ freq, duration: 180, type: 'triangle', gain: 0.2 }), i * 110));
+}
 
 function setMuted(v) {
   muted = v;
@@ -571,14 +586,19 @@ function onFalseStart(playerNum) {
 }
 
 function onResult(playerNum, ms) {
-  soundHit();
   pendingResults[playerNum] = ms;
   const name = roundNames[playerNum - 1] || ('Jogador ' + playerNum);
+
+  const prevBest = loadLeaderboard()[0];
+  const isNewRecord = !prevBest || ms < prevBest.time;
+  isNewRecord ? soundRecord() : soundHit();
+
   addToLeaderboard(name, ms);
 
   const box = document.createElement('div');
-  box.className = 'player-box';
+  box.className = 'player-box' + (isNewRecord ? ' new-record' : '');
   box.innerHTML = `
+    ${isNewRecord ? '<div class="record-badge">🏆 Novo recorde do dia!</div>' : ''}
     <div class="player-label">${escapeHtml(name)}</div>
     <div class="reaction-time">${ms}<span class="reaction-ms"> ms</span></div>`;
   $('gameResults').appendChild(box);
