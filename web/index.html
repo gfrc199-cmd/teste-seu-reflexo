@@ -210,30 +210,44 @@
   /* Contador de visitantes — Arduino próprio (sensores da porta), sempre
      visível (mesmo durante uma partida), clica pra conectar. */
   .visitor-badge {
-    position: fixed; bottom: 2vh; left: 3vw; z-index: 5;
-    display: flex; align-items: center; gap: .7vh;
-    background: var(--panel); border: 1px solid var(--panel-border); color: var(--muted);
-    font-family: var(--font-display); font-size: 1.6vh; font-weight: 700;
-    padding: .9vh 1.4vw; border-radius: 999px; cursor: pointer;
+    position: fixed; bottom: 2.4vh; left: 3vw; z-index: 5;
+    display: flex; align-items: center; gap: 1.1vh;
+    background: var(--panel); border: 2px solid var(--panel-border); color: var(--muted);
+    font-family: var(--font-display); font-size: 2.6vh; font-weight: 800;
+    padding: 1.4vh 2vw; border-radius: 999px; cursor: pointer;
+    box-shadow: 0 6px 18px rgba(0,0,0,.1);
   }
   .visitor-badge:focus-visible { outline: 3px solid var(--accent2); outline-offset: 2px; }
   .visitor-dot {
-    display: inline-block; width: 1.1vh; height: 1.1vh; border-radius: 50%;
+    display: inline-block; width: 1.6vh; height: 1.6vh; border-radius: 50%;
     background: var(--danger);
   }
-  .visitor-badge.connected { color: var(--text); }
+  .visitor-badge.connected { color: var(--text); border-color: var(--good); }
   .visitor-badge.connected .visitor-dot { background: var(--good); }
   #visitorCount {
     font-family: var(--font-mono); color: var(--accent); font-variant-numeric: tabular-nums;
+    font-size: 3.2vh;
   }
   @media (prefers-reduced-motion: no-preference) {
     .visitor-badge.pulse { animation: visitor-pulse .6s ease; }
   }
   @keyframes visitor-pulse {
     0% { transform: scale(1); }
-    30% { transform: scale(1.12); box-shadow: 0 0 0 5px color-mix(in srgb, var(--good) 35%, transparent); }
+    30% { transform: scale(1.15); box-shadow: 0 0 0 7px color-mix(in srgb, var(--good) 35%, transparent); }
     100% { transform: scale(1); }
   }
+
+  /* Aviso pra sala toda quando chega gente nova — some sozinho */
+  .visitor-toast {
+    position: fixed; top: 3vh; left: 50%; z-index: 6;
+    transform: translateX(-50%) translateY(-160%);
+    background: var(--accent); color: #1b1206; font-weight: 800;
+    font-size: 3vh; padding: 1.6vh 2.8vw; border-radius: 999px;
+    box-shadow: 0 12px 32px rgba(0,0,0,.28);
+    transition: transform .45s cubic-bezier(.34,1.56,.64,1);
+    white-space: nowrap; pointer-events: none;
+  }
+  .visitor-toast.show { transform: translateX(-50%) translateY(0); }
 
   .hidden { display: none !important; }
 
@@ -298,6 +312,7 @@
 <button id="visitorBadge" class="visitor-badge" title="Clique pra conectar o Arduino do contador de visitantes">
   <span id="visitorDot" class="visitor-dot"></span> Visitantes hoje <span id="visitorCount">0</span>
 </button>
+<div id="visitorToast" class="visitor-toast" aria-live="polite"></div>
 
 <div id="app">
 
@@ -608,7 +623,17 @@ function handleSerialLine(line) {
   } else if (line.startsWith('FALSE_START:P')) {
     const [, player] = line.match(/FALSE_START:P(\d)/) || [];
     onFalseStart(Number(player));
+  } else if (line === 'START_BTN') {
+    handleStartButton();
   }
+}
+
+// Botão físico de "Começar" na bancada — só dispara se a tela ociosa
+// já estiver pronta (conectado/simulando e não no meio de outra partida).
+function handleStartButton() {
+  const idleVisible = !$('screen-idle').classList.contains('hidden');
+  const ready = !$('postConnect').classList.contains('hidden');
+  if (idleVisible && ready) startRound();
 }
 
 // --- Fluxo do jogo ---
@@ -732,11 +757,26 @@ function pulseVisitorBadge() {
   setTimeout(() => $('visitorBadge').classList.remove('pulse'), 600);
 }
 
+let visitorToastTimer = null;
+function showVisitorToast() {
+  const el = $('visitorToast');
+  el.textContent = '🎉 Chegou gente nova! Visitantes hoje: ' + visitorCount;
+  el.classList.add('show');
+  clearTimeout(visitorToastTimer);
+  visitorToastTimer = setTimeout(() => el.classList.remove('show'), 3200);
+}
+
+function soundVisitor() {
+  beep({ freq: 988, duration: 220, type: 'sine', gain: 0.18 });
+  setTimeout(() => beep({ freq: 784, duration: 280, type: 'sine', gain: 0.18 }), 230);
+}
+
 async function connectVisitorCounter() {
   if (!('serial' in navigator)) {
     alert('Seu navegador não suporta Web Serial. Use Chrome ou Edge no computador.');
     return;
   }
+  ensureAudio();
   try {
     visitorPort = await navigator.serial.requestPort();
     await visitorPort.open({ baudRate: 9600 });
@@ -766,6 +806,8 @@ async function visitorReadLoop() {
           saveVisitors(visitorCount);
           renderVisitorCount();
           pulseVisitorBadge();
+          showVisitorToast();
+          soundVisitor();
         }
         // EXIT é ignorado de propósito — isso conta entradas do dia, não presença ao vivo.
       }
