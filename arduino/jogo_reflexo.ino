@@ -1,9 +1,14 @@
 // Jogo de Reflexo - Mundo das Profissoes (Engenharia Eletrica)
 // Le comandos START:1 / START:2 pela serial, controla LED(s) e botao(oes),
 // e envia os resultados de volta pela serial pra pagina web mostrar na TV.
+// Tambem le um botao fisico de "Comecar" na bancada (pino 6): quando o
+// jogo esta parado (IDLE), avisa a pagina web pela serial (START_BTN) pra
+// ela comecar a partida com o que ja estiver preenchido na tela (nomes,
+// 1 ou 2 jogadores) — nao decide sozinho, so pede pra pagina comecar.
 
 const int LED_PINS[2] = {8, 9};
 const int BUTTON_PINS[2] = {2, 3};
+const int START_BTN_PIN = 6;
 
 enum State { IDLE, WAITING, LIT };
 State state = IDLE;
@@ -13,6 +18,7 @@ unsigned long waitDuration = 0;
 unsigned long lightOnTime = 0;
 int activePlayers = 1;
 bool pressed[2] = {false, false};
+bool startBtnPrev = HIGH;
 
 void setup() {
   Serial.begin(9600);
@@ -21,11 +27,13 @@ void setup() {
     pinMode(BUTTON_PINS[i], INPUT_PULLUP);
     digitalWrite(LED_PINS[i], LOW);
   }
+  pinMode(START_BTN_PIN, INPUT_PULLUP);
   randomSeed(analogRead(A0));
 }
 
 void loop() {
   readSerialCommand();
+  checkStartButton();
 
   switch (state) {
     case WAITING:
@@ -40,6 +48,14 @@ void loop() {
     case IDLE:
       break;
   }
+}
+
+void checkStartButton() {
+  bool btn = digitalRead(START_BTN_PIN);
+  if (startBtnPrev == HIGH && btn == LOW && state == IDLE) {
+    Serial.println("START_BTN");
+  }
+  startBtnPrev = btn;
 }
 
 void readSerialCommand() {
