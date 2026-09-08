@@ -1,11 +1,8 @@
 // Pedestal do botão de 100mm (jogador 1 ou 2) — furo no topo pro botão arcade,
 // canal interno pra passar o cabo CAT5 até a base do jogo.
 //
-// Corpo HEXAGONAL (em vez de tubo liso) com uma JANELA em forma de raio vazada na
-// face da frente — deixa o cabo CAT5 visível passando por dentro, mesma filosofia
-// de "fiação exposta" já usada na base aberta do Arduino (pedido do Gabriel pra
-// visitante ver como é feito). Serve também de elemento visual pra chamar atenção
-// na bancada, junto com o próprio "Teste seu Reflexo" do tema.
+// Corpo HEXAGONAL com o topo CHANFRADO (bisel de 45°, como uma porca sextavada) —
+// forma vem da geometria em si (facetada), sem ícone/símbolo gravado.
 //
 // *** ATENÇÃO — MEDIDA NÃO CONFIRMADA ***
 // Não achei em nenhum fornecedor (NeoDiver, Adafruit, outros) o diâmetro exato do furo
@@ -24,17 +21,17 @@ hole_d       = 3.2;    // furo M3 pra fixar o pedestal na bancada
 
 // --- Corpo hexagonal: dimensionado pra sobrar parede de verdade mesmo no centro
 // de cada face (não só nas quinas) ---
-inner_r     = button_hole_d / 2;
-apothem     = inner_r + wall_t;                 // distância mínima centro->face
-hex_d       = apothem * 2 / cos(30);            // diâmetro entre vértices (circunscrito)
+inner_r      = button_hole_d / 2;
+apothem      = inner_r + wall_t;                // distância mínima centro->face
+hex_d        = apothem * 2 / cos(30);           // diâmetro entre vértices (circunscrito)
 apothem_real = hex_d / 2 * cos(30);
 
 base_plate_d = hex_d + 24;                      // base mais larga que o corpo, pra estabilidade
 hole_r_pos   = base_plate_d / 2 - 10;
 
-// --- Janela em forma de raio, vazada na face da frente ---
-bolt_w = min(apothem_real * 0.7, 36);           // largura do raio (não passa da face) — aumentada
-bolt_h = pedestal_h * 0.7;                      // altura do raio — aumentada
+// --- Chanfros (45°) — é isso que dá o "formato", não gravação ---
+bevel_top   = 8;   // altura do bisel no topo do corpo hexagonal
+bevel_plate = 2.5; // altura do bisel na borda da base
 
 $fn = 80;
 
@@ -44,33 +41,31 @@ module hex_prism(d, h) {
         cylinder(d = d, h = h, $fn = 6);
 }
 
-// Silhueta clássica de raio (ícone padrão de "bolt"), organizada como
-// [altura, largura] (mapeia certo depois da rotação em janela_raio())
-module raio_2d(w, h) {
-    hh = h / 2;
-    polygon(points = [
-        [ 1.0*hh,  0.1*w],
-        [-0.2*hh, -0.9*w],
-        [-0.2*hh,  0.0*w],
-        [-1.0*hh, -0.1*w],
-        [ 0.2*hh,  0.9*w],
-        [ 0.2*hh,  0.0*w],
-    ]);
+// corpo hexagonal com o topo chanfrado a 45°: hull entre o hexágono cheio
+// (até a altura h-bevel) e um hexágono menor rente ao topo
+module hex_chanfrado(d, h, bevel) {
+    shrink = 1 - bevel / apothem_real;   // reduz o diâmetro proporcionalmente ao apótema
+    hull() {
+        hex_prism(d, h - bevel);
+        translate([0, 0, h - bevel])
+            hex_prism(d * shrink, 0.01);
+    }
 }
 
-module janela_raio() {
-    depth = (apothem_real - inner_r) + 4;
-    translate([inner_r - 2, 0, base_plate_h + pedestal_h/2])
-        rotate([0, 90, 0])
-            linear_extrude(height = depth)
-                raio_2d(bolt_w, bolt_h);
+// disco da base com a borda de cima chanfrada
+module disco_chanfrado(d, h, bevel) {
+    hull() {
+        cylinder(d = d, h = h - bevel);
+        translate([0, 0, h - bevel])
+            cylinder(d = d - 2*bevel, h = 0.01);
+    }
 }
 
 module pedestal() {
     union() {
-        // base larga, fixada na bancada
+        // base larga, fixada na bancada, com borda chanfrada
         difference() {
-            cylinder(d = base_plate_d, h = base_plate_h);
+            disco_chanfrado(base_plate_d, base_plate_h, bevel_plate);
             translate([0, 0, -1])
                 cylinder(d = wire_channel_d, h = base_plate_h + 2);
             for (a = [0, 120, 240])
@@ -79,13 +74,12 @@ module pedestal() {
                         cylinder(d = hole_d, h = base_plate_h + 2);
         }
 
-        // corpo hexagonal do pedestal, com furo do botão no topo e janela do raio na frente
+        // corpo hexagonal do pedestal, topo chanfrado, com furo do botão
         translate([0, 0, base_plate_h])
             difference() {
-                hex_prism(hex_d, pedestal_h);
+                hex_chanfrado(hex_d, pedestal_h, bevel_top);
                 translate([0, 0, -1])
                     cylinder(d = button_hole_d, h = pedestal_h + 2);
-                janela_raio();
             }
     }
 }

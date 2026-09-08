@@ -2,6 +2,9 @@
 // batente da porta, um de cada lado (S1 corredor, S2 sala). Mesma lógica de bandeja
 // aberta das outras peças: segura o módulo pelas bordas, sem cobrir os LEDs/trimpot.
 //
+// Silhueta com CANTOS CHANFRADOS a 45° (mesma linguagem das outras peças) — forma vem
+// da geometria, sem símbolo/ícone gravado.
+//
 // *** MEDIDAS DO MÓDULO — PADRÃO GENÉRICO, NÃO CONFIRMADAS COM O SENSOR REAL ***
 // board_l/board_w/hole_spacing são os valores típicos desse tipo de módulo de 3 pinos
 // (o mesmo vendido na Eletrogate). Confirma com paquímetro quando o sensor chegar —
@@ -13,7 +16,7 @@ hole_spacing_l = 38;    // distância entre os 2 furos de fixação do próprio 
 board_hole_d   = 2.2;   // furo de fixação do módulo (parafuso pequeno, M2)
 
 clearance = 0.5;
-wall_t    = 3;         // engrossada de 2->3mm pra aguentar gravação mais funda e visível
+wall_t    = 3;
 floor_t   = 2;
 lip_h     = 3;         // baixo o bastante pra não tampar o trimpot nem os LEDs
 
@@ -25,9 +28,7 @@ mount_inset  = 6;
 cable_slot_w = 12;
 cable_slot_h = 6;
 
-// --- Selo gravado (raio pequeno, mesmo símbolo do pedestal) na parede da ponta
-// oposta ao rasgo do cabo — bem mais marcada que antes, ainda sem vazar (parede 3mm) ---
-engrave_depth = 1.8;   // sobra 1,2mm sólido — bem mais funda que antes (era 0,7/2mm)
+chamfer = 5;   // corte de 45° nos cantos — peça pequena, chanfro mais discreto que o das outras
 
 $fn = 40;
 
@@ -35,32 +36,17 @@ outer_l = board_l + 2*clearance + 2*wall_t;
 outer_w = board_w + 2*clearance + 2*wall_t;
 total_h = floor_t + lip_h;
 
-bolt_w = outer_w * 0.55;
-bolt_h = total_h * 0.85;
-
-// mesmo polígono de raio já validado (sem autointersecção) usado no botao_pedestal.scad
-module raio_2d(w, h) {
-    hh = h / 2;
-    polygon(points = [
-        [ 1.0*hh,  0.1*w],
-        [-0.2*hh, -0.9*w],
-        [-0.2*hh,  0.0*w],
-        [-1.0*hh, -0.1*w],
-        [ 0.2*hh,  0.9*w],
-        [ 0.2*hh,  0.0*w],
-    ]);
-}
-
-module selo_raio() {
-    translate([outer_l - engrave_depth, outer_w / 2, total_h / 2])
-        rotate([0, 90, 0])
-            linear_extrude(height = engrave_depth + 0.1)
-                raio_2d(bolt_w, bolt_h);
+module chamfered_prism(l, w, h, c) {
+    linear_extrude(height = h)
+        polygon(points = [
+            [c, 0], [l - c, 0], [l, c], [l, w - c],
+            [l - c, w], [c, w], [0, w - c], [0, c],
+        ]);
 }
 
 module suporte() {
     difference() {
-        cube([outer_l, outer_w, total_h]);
+        chamfered_prism(outer_l, outer_w, total_h, chamfer);
 
         // bolsão onde o módulo encaixa
         translate([wall_t, wall_t, floor_t])
@@ -83,9 +69,6 @@ module suporte() {
             cylinder(d = mount_hole_d, h = total_h + 2);
         translate([outer_l - mount_inset, outer_w/2, -1])
             cylinder(d = mount_hole_d, h = total_h + 2);
-
-        // selo gravado do raio, na parede da ponta oposta ao cabo (X=outer_l)
-        selo_raio();
     }
 }
 
