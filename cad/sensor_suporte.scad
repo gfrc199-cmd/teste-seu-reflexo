@@ -25,11 +25,38 @@ mount_inset  = 6;
 cable_slot_w = 12;
 cable_slot_h = 6;
 
+// --- Selo gravado (raio pequeno, mesmo símbolo do pedestal) na parede da ponta
+// oposta ao rasgo do cabo — gravação RASA, não vaza a parede de 2mm ---
+engrave_depth = 0.7;   // bem raso — parede aqui é fina (2mm), sobra 1,3mm sólido
+
 $fn = 40;
 
 outer_l = board_l + 2*clearance + 2*wall_t;
 outer_w = board_w + 2*clearance + 2*wall_t;
 total_h = floor_t + lip_h;
+
+bolt_w = outer_w * 0.35;
+bolt_h = total_h * 0.7;
+
+// mesmo polígono de raio já validado (sem autointersecção) usado no botao_pedestal.scad
+module raio_2d(w, h) {
+    hh = h / 2;
+    polygon(points = [
+        [ 1.0*hh,  0.1*w],
+        [-0.2*hh, -0.9*w],
+        [-0.2*hh,  0.0*w],
+        [-1.0*hh, -0.1*w],
+        [ 0.2*hh,  0.9*w],
+        [ 0.2*hh,  0.0*w],
+    ]);
+}
+
+module selo_raio() {
+    translate([outer_l - engrave_depth, outer_w / 2, total_h / 2])
+        rotate([0, 90, 0])
+            linear_extrude(height = engrave_depth + 0.1)
+                raio_2d(bolt_w, bolt_h);
+}
 
 module suporte() {
     difference() {
@@ -56,6 +83,9 @@ module suporte() {
             cylinder(d = mount_hole_d, h = total_h + 2);
         translate([outer_l - mount_inset, outer_w/2, -1])
             cylinder(d = mount_hole_d, h = total_h + 2);
+
+        // selo gravado do raio, na parede da ponta oposta ao cabo (X=outer_l)
+        selo_raio();
     }
 }
 

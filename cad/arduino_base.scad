@@ -20,11 +20,49 @@ lip_h      = 4;      // um pouco mais alto pra segurar o Arduino, que é mais pe
 hole_d     = 3.2;    // furo M3 pra fixar na bancada
 hole_inset = 6;
 
+// --- Selo gravado (símbolo de resistor) na parede da frente (Y=0), a que não tem
+// corte de conector — gravação RASA (baixo-relevo), não vaza a parede de 2mm ---
+engrave_depth = 1.0;   // raso — sobra 1mm de parede sólida atrás
+res_line_r    = 0.9;   // espessura da linha do símbolo
+
 $fn = 40;
 
 outer_l = pcb_l + 2*clearance + 2*wall_t;
 outer_w = pcb_w + 2*clearance + 2*wall_t;
 total_h = floor_t + lip_h;
+
+res_w = outer_l * 0.55;
+res_h = total_h * 0.6;
+
+// pontos do símbolo clássico de resistor (zigue-zague), normalizados em res_w x res_h
+function res_pts() = [
+    [0.00*res_w,  0.0*res_h],
+    [0.14*res_w,  0.0*res_h],
+    [0.24*res_w,  0.5*res_h],
+    [0.38*res_w, -0.5*res_h],
+    [0.52*res_w,  0.5*res_h],
+    [0.66*res_w, -0.5*res_h],
+    [0.80*res_w,  0.5*res_h],
+    [0.90*res_w,  0.0*res_h],
+    [1.00*res_w,  0.0*res_h],
+];
+
+// desenha uma linha grossa em 2D como corrente de cápsulas (hull de círculos) —
+// evita polígono autointersectante (problema que já pegamos no raio do pedestal)
+module linha_grossa_2d(pts, r) {
+    for (i = [0 : len(pts) - 2])
+        hull() {
+            translate(pts[i]) circle(r = r, $fn = 16);
+            translate(pts[i + 1]) circle(r = r, $fn = 16);
+        }
+}
+
+module selo_resistor() {
+    translate([(outer_l - res_w) / 2, -0.1, total_h / 2])
+        rotate([-90, 0, 0])
+            linear_extrude(height = engrave_depth + 0.1)
+                linha_grossa_2d(res_pts(), res_line_r);
+}
 
 module base() {
     difference() {
@@ -43,6 +81,9 @@ module base() {
             for (y = [hole_inset, outer_w - hole_inset])
                 translate([x, y, -1])
                     cylinder(d = hole_d, h = total_h + 2);
+
+        // selo gravado do resistor, na parede de fora (Y=0)
+        selo_resistor();
     }
 }
 
