@@ -14,16 +14,16 @@ conn_h        = 14;  // altura livre do rasgo (cobre USB + jack de uma vez)
 
 // --- Parametros da bandeja (iguais à protoboard_tray pra manter o mesmo visual) ---
 clearance  = 0.6;   // folga um pouco maior que a protoboard (Arduino tem componentes salientes embaixo)
-wall_t     = 2;
+wall_t     = 3;      // engrossada de 2->3mm pra aguentar uma gravação bem mais funda e visível
 floor_t    = 2;
 lip_h      = 4;      // um pouco mais alto pra segurar o Arduino, que é mais pesado que a protoboard
 hole_d     = 3.2;    // furo M3 pra fixar na bancada
 hole_inset = 6;
 
 // --- Selo gravado (símbolo de resistor) na parede da frente (Y=0), a que não tem
-// corte de conector — gravação RASA (baixo-relevo), não vaza a parede de 2mm ---
-engrave_depth = 1.0;   // raso — sobra 1mm de parede sólida atrás
-res_line_r    = 0.9;   // espessura da linha do símbolo
+// corte de conector — gravação bem marcada, mas ainda sem vazar a parede (3mm) ---
+engrave_depth = 1.8;   // sobra 1,2mm de parede sólida atrás — bem mais funda que antes (era 1,0/2mm)
+res_line_r    = 1.6;   // linha bem mais grossa que antes (era 0,9)
 
 $fn = 40;
 
@@ -31,8 +31,8 @@ outer_l = pcb_l + 2*clearance + 2*wall_t;
 outer_w = pcb_w + 2*clearance + 2*wall_t;
 total_h = floor_t + lip_h;
 
-res_w = outer_l * 0.55;
-res_h = total_h * 0.6;
+res_w = outer_l * 0.7;
+res_h = total_h * 0.85;
 
 // pontos do símbolo clássico de resistor (zigue-zague), normalizados em res_w x res_h
 function res_pts() = [

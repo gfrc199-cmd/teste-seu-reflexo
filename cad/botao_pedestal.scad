@@ -33,8 +33,8 @@ base_plate_d = hex_d + 24;                      // base mais larga que o corpo, 
 hole_r_pos   = base_plate_d / 2 - 10;
 
 // --- Janela em forma de raio, vazada na face da frente ---
-bolt_w = min(apothem_real * 0.55, 28);          // largura do raio (não passa da face)
-bolt_h = pedestal_h * 0.55;                     // altura do raio
+bolt_w = min(apothem_real * 0.7, 36);           // largura do raio (não passa da face) — aumentada
+bolt_h = pedestal_h * 0.7;                      // altura do raio — aumentada
 
 $fn = 80;
 

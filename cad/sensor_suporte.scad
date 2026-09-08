@@ -13,7 +13,7 @@ hole_spacing_l = 38;    // distância entre os 2 furos de fixação do próprio 
 board_hole_d   = 2.2;   // furo de fixação do módulo (parafuso pequeno, M2)
 
 clearance = 0.5;
-wall_t    = 2;
+wall_t    = 3;         // engrossada de 2->3mm pra aguentar gravação mais funda e visível
 floor_t   = 2;
 lip_h     = 3;         // baixo o bastante pra não tampar o trimpot nem os LEDs
 
@@ -26,8 +26,8 @@ cable_slot_w = 12;
 cable_slot_h = 6;
 
 // --- Selo gravado (raio pequeno, mesmo símbolo do pedestal) na parede da ponta
-// oposta ao rasgo do cabo — gravação RASA, não vaza a parede de 2mm ---
-engrave_depth = 0.7;   // bem raso — parede aqui é fina (2mm), sobra 1,3mm sólido
+// oposta ao rasgo do cabo — bem mais marcada que antes, ainda sem vazar (parede 3mm) ---
+engrave_depth = 1.8;   // sobra 1,2mm sólido — bem mais funda que antes (era 0,7/2mm)
 
 $fn = 40;
 
@@ -35,8 +35,8 @@ outer_l = board_l + 2*clearance + 2*wall_t;
 outer_w = board_w + 2*clearance + 2*wall_t;
 total_h = floor_t + lip_h;
 
-bolt_w = outer_w * 0.35;
-bolt_h = total_h * 0.7;
+bolt_w = outer_w * 0.55;
+bolt_h = total_h * 0.85;
 
 // mesmo polígono de raio já validado (sem autointersecção) usado no botao_pedestal.scad
 module raio_2d(w, h) {
