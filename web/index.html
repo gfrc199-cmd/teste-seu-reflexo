@@ -207,47 +207,15 @@
   }
   .sound-toggle:focus-visible { outline: 3px solid var(--accent2); outline-offset: 2px; }
 
-  /* Contador de visitantes — Arduino próprio (sensores da porta), sempre
-     visível (mesmo durante uma partida), clica pra conectar. */
-  .visitor-badge {
+  /* Mensagem fixa no canto inferior esquerdo */
+  .welcome-msg {
     position: fixed; bottom: 2.4vh; left: 3vw; z-index: 5;
-    display: flex; align-items: center; gap: 1.1vh;
-    background: var(--panel); border: 2px solid var(--panel-border); color: var(--muted);
+    background: var(--panel); border: 2px solid var(--panel-border); color: var(--text);
     font-family: var(--font-display); font-size: 2.6vh; font-weight: 800;
-    padding: 1.4vh 2vw; border-radius: 999px; cursor: pointer;
+    padding: 1.4vh 2vw; border-radius: 999px;
     box-shadow: 0 6px 18px rgba(0,0,0,.1);
   }
-  .visitor-badge:focus-visible { outline: 3px solid var(--accent2); outline-offset: 2px; }
-  .visitor-dot {
-    display: inline-block; width: 1.6vh; height: 1.6vh; border-radius: 50%;
-    background: var(--danger);
-  }
-  .visitor-badge.connected { color: var(--text); border-color: var(--good); }
-  .visitor-badge.connected .visitor-dot { background: var(--good); }
-  #visitorCount {
-    font-family: var(--font-mono); color: var(--accent); font-variant-numeric: tabular-nums;
-    font-size: 3.2vh;
-  }
-  @media (prefers-reduced-motion: no-preference) {
-    .visitor-badge.pulse { animation: visitor-pulse .6s ease; }
-  }
-  @keyframes visitor-pulse {
-    0% { transform: scale(1); }
-    30% { transform: scale(1.15); box-shadow: 0 0 0 7px color-mix(in srgb, var(--good) 35%, transparent); }
-    100% { transform: scale(1); }
-  }
-
-  /* Aviso pra sala toda quando chega gente nova — some sozinho */
-  .visitor-toast {
-    position: fixed; top: 3vh; left: 50%; z-index: 6;
-    transform: translateX(-50%) translateY(-160%);
-    background: var(--accent); color: #1b1206; font-weight: 800;
-    font-size: 3vh; padding: 1.6vh 2.8vw; border-radius: 999px;
-    box-shadow: 0 12px 32px rgba(0,0,0,.28);
-    transition: transform .45s cubic-bezier(.34,1.56,.64,1);
-    white-space: nowrap; pointer-events: none;
-  }
-  .visitor-toast.show { transform: translateX(-50%) translateY(0); }
+  .welcome-msg span { color: var(--accent); }
 
   .hidden { display: none !important; }
 
@@ -309,10 +277,7 @@
 <div id="circuitBg" aria-hidden="true"></div>
 <div class="conn-status"><span id="connDot" class="conn-dot"></span><span id="connText">Arduino desconectado</span></div>
 <button class="sound-toggle" id="btnMute" title="Ativar ou desativar som" aria-label="Ativar ou desativar som">🔊</button>
-<button id="visitorBadge" class="visitor-badge" title="Clique pra conectar o Arduino do contador de visitantes">
-  <span id="visitorDot" class="visitor-dot"></span> Visitantes hoje <span id="visitorCount">0</span>
-</button>
-<div id="visitorToast" class="visitor-toast" aria-live="polite"></div>
+<div class="welcome-msg">🏆 Bata o <span>recorde do dia</span>!</div>
 
 <div id="app">
 
@@ -802,95 +767,6 @@ function scheduleAttract() {
   attractTimer = setTimeout(() => document.body.classList.add('attract'), ATTRACT_DELAY_MS);
 }
 
-// --- Contador de visitantes: Arduino próprio (sensores da porta), conexão
-// serial separada do jogo — não depende de nada mais da página pra rodar. ---
-const VISITORS_KEY = 'reflexo_visitantes_v1';
-let visitorPort = null;
-let visitorCount = 0;
-
-function todayStr() {
-  const d = new Date();
-  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
-}
-function loadVisitors() {
-  try {
-    const data = JSON.parse(localStorage.getItem(VISITORS_KEY));
-    if (data && data.date === todayStr()) return data.count;
-  } catch {}
-  return 0;
-}
-function saveVisitors(count) {
-  try { localStorage.setItem(VISITORS_KEY, JSON.stringify({ date: todayStr(), count })); } catch {}
-}
-function renderVisitorCount() {
-  $('visitorCount').textContent = visitorCount;
-}
-function pulseVisitorBadge() {
-  $('visitorBadge').classList.add('pulse');
-  setTimeout(() => $('visitorBadge').classList.remove('pulse'), 600);
-}
-
-let visitorToastTimer = null;
-function showVisitorToast() {
-  const el = $('visitorToast');
-  el.textContent = '🎉 Chegou gente nova! Visitantes hoje: ' + visitorCount;
-  el.classList.add('show');
-  clearTimeout(visitorToastTimer);
-  visitorToastTimer = setTimeout(() => el.classList.remove('show'), 3200);
-}
-
-function soundVisitor() {
-  beep({ freq: 988, duration: 220, type: 'sine', gain: 0.18 });
-  setTimeout(() => beep({ freq: 784, duration: 280, type: 'sine', gain: 0.18 }), 230);
-}
-
-async function connectVisitorCounter() {
-  if (!('serial' in navigator)) {
-    alert('Seu navegador não suporta Web Serial. Use Chrome ou Edge no computador.');
-    return;
-  }
-  ensureAudio();
-  try {
-    visitorPort = await navigator.serial.requestPort();
-    await visitorPort.open({ baudRate: 9600 });
-    $('visitorBadge').classList.add('connected');
-    visitorReadLoop();
-  } catch (err) {
-    console.error(err);
-  }
-}
-
-async function visitorReadLoop() {
-  const decoder = new TextDecoderStream();
-  const readableClosed = visitorPort.readable.pipeTo(decoder.writable);
-  const reader = decoder.readable.getReader();
-  let buffer = '';
-  try {
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buffer += value;
-      let idx;
-      while ((idx = buffer.indexOf('\n')) >= 0) {
-        const line = buffer.slice(0, idx).trim();
-        buffer = buffer.slice(idx + 1);
-        if (line === 'ENTRY') {
-          visitorCount++;
-          saveVisitors(visitorCount);
-          renderVisitorCount();
-          pulseVisitorBadge();
-          showVisitorToast();
-          soundVisitor();
-        }
-        // EXIT é ignorado de propósito — isso conta entradas do dia, não presença ao vivo.
-      }
-    }
-  } catch (err) {
-    console.error('Erro na leitura do contador de visitantes:', err);
-    $('visitorBadge').classList.remove('connected');
-  }
-}
-
 // --- Eventos ---
 $('btnConnect').addEventListener('click', connectArduino);
 $('btnSimulate').addEventListener('click', connectSimulated);
@@ -898,11 +774,8 @@ $('btnKeyboard').addEventListener('click', connectKeyboard);
 $('btnToggle2p').addEventListener('click', toggle2p);
 $('btnStart').addEventListener('click', startRound);
 $('btnMute').addEventListener('click', () => setMuted(!muted));
-$('visitorBadge').addEventListener('click', () => { if (!visitorPort) connectVisitorCounter(); });
 
 $('btnMute').textContent = muted ? '🔇' : '🔊';
-visitorCount = loadVisitors();
-renderVisitorCount();
 renderLeaderboard();
 scheduleAttract();
 </script>
