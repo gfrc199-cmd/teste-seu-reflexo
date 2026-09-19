@@ -135,6 +135,14 @@
   }
   input.name-input:focus-visible { outline: none; border-color: var(--accent2); }
 
+  .key-hint { margin-top: 2.2vh; font-size: 2.2vh; line-height: 1.6; color: var(--muted); }
+  .key-hint kbd {
+    font-family: var(--font-mono); font-weight: 700; color: var(--text);
+    background: var(--panel); border: 1px solid var(--panel-border); border-bottom-width: 3px;
+    border-radius: 6px; padding: .2vh .9vh;
+  }
+  .key-hint strong { color: var(--good); }
+
   .players-row { display: flex; gap: 2.4vw; justify-content: center; flex-wrap: wrap; }
   .player-box {
     background: var(--panel); border: 1px solid var(--panel-border);
@@ -188,16 +196,6 @@
   table.leaderboard td.rank { color: var(--muted); width: 3vw; }
   table.leaderboard td.time { text-align: right; }
   table.leaderboard td.name-cell { font-family: var(--font-display); }
-
-  .conn-status {
-    position: fixed; top: 3.6vh; left: calc(3vw + 8vh); font-size: 1.7vh; color: var(--muted);
-    display: flex; align-items: center; gap: .6vh;
-  }
-  .conn-dot {
-    display: inline-block; width: 1.2vh; height: 1.2vh; border-radius: 50%;
-    background: var(--danger);
-  }
-  .conn-dot.on { background: var(--good); }
 
   .sound-toggle {
     position: fixed; top: 2vh; left: 3vw; z-index: 5;
@@ -275,7 +273,6 @@
 </head>
 <body>
 <div id="circuitBg" aria-hidden="true"></div>
-<div class="conn-status"><span id="connDot" class="conn-dot"></span><span id="connText">Arduino desconectado</span></div>
 <button class="sound-toggle" id="btnMute" title="Ativar ou desativar som" aria-label="Ativar ou desativar som">🔊</button>
 <div class="welcome-msg">🏆 Bata o <span>recorde do dia</span>!</div>
 
@@ -286,13 +283,7 @@
     <h1 class="title">Teste seu <span>REFLEXO</span></h1>
     <div class="subtitle">Engenharia Elétrica — Mundo das Profissões</div>
 
-    <div id="preConnect">
-      <button class="btn" id="btnKeyboard">Jogar com o teclado (Espaço)</button><br>
-      <button class="btn secondary" id="btnConnect">Conectar Arduino</button><br>
-      <button class="btn ghost" id="btnSimulate">Simular sem Arduino (teste)</button>
-    </div>
-
-    <div id="postConnect" class="hidden">
+    <div id="controls">
       <div class="players-row">
         <div class="player-box">
           <div class="player-label">Jogador 1</div>
@@ -308,6 +299,10 @@
       </div>
       <div>
         <button class="btn" id="btnStart">Começar</button>
+      </div>
+      <div class="key-hint">
+        <kbd>ESPAÇO</kbd> = Jogador 1 &nbsp;·&nbsp; <kbd>ENTER</kbd> = Jogador 2 — aperte quando aparecer <strong>AGORA!</strong><br>
+        Aperte <kbd>ESPAÇO</kbd> pra começar a rodada
       </div>
     </div>
 
@@ -432,12 +427,9 @@
 
 <script>
 const LB_KEY = 'reflexo_leaderboard_v1';
-let port, reader, readableClosed;
 let twoPlayers = false;
 let roundNames = [];
-let simulating = false;
-let keyboardMode = false;
-let kbRound = null; // rodada em andamento no modo teclado: { n, lit, t0, timer, hit }
+let kbRound = null; // rodada em andamento: { n, lit, t0, timer, hit }
 
 const $ = id => document.getElementById(id);
 
@@ -519,160 +511,54 @@ function escapeHtml(s) {
   return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
-// --- Web Serial ---
-async function connectArduino() {
-  if (!('serial' in navigator)) {
-    alert('Seu navegador não suporta Web Serial. Use Chrome ou Edge no computador.');
-    return;
-  }
-  ensureAudio();
-  try {
-    port = await navigator.serial.requestPort();
-    await port.open({ baudRate: 9600 });
-    simulating = false;
-    keyboardMode = false;
-    setConnected(true);
-    readLoop();
-  } catch (err) {
-    console.error(err);
-  }
-}
-
-function connectSimulated() {
-  ensureAudio();
-  simulating = true;
-  keyboardMode = false;
-  setConnected(true);
-}
-
-// Modo teclado: a própria página sorteia a espera, acende o "AGORA!" e mede o
-// tempo com performance.now() — Espaço = Jogador 1, Enter = Jogador 2.
-function connectKeyboard() {
-  ensureAudio();
-  simulating = false;
-  keyboardMode = true;
-  setConnected(true);
-}
-
-function keyboardRound(cmd) {
-  const n = Number(cmd.split(':')[1]) || 1;
+// --- Rodada: a própria página sorteia a espera, acende o "AGORA!" e mede o
+// tempo com performance.now(). Espaço = Jogador 1, Enter = Jogador 2. ---
+function beginRound(n) {
   clearTimeout(kbRound && kbRound.timer);
   const round = kbRound = { n, lit: false, t0: 0, hit: {}, timer: null };
   round.timer = setTimeout(() => {
     round.lit = true;
     round.t0 = performance.now();
-    handleSerialLine('LIGHT_ON');
+    onLightOn();
     // ninguém apertou (ou só um dos dois): não deixa a tela presa
     setTimeout(() => { if (kbRound === round) { kbRound = null; backToIdle(); } }, 6000);
-  }, 3000 + Math.random() * 5000); // mesma espera de 3 a 8s do firmware
+  }, 3000 + Math.random() * 5000); // espera aleatória de 3 a 8s, evita "chutar" o momento
 }
 
-function keyboardPress(player) {
+function playerPress(player) {
   const r = kbRound;
   if (!r || player > r.n || r.hit[player]) return;
   if (!r.lit) { // apertou antes da luz: falsa largada encerra a rodada
     clearTimeout(r.timer);
     kbRound = null;
-    handleSerialLine('FALSE_START:P' + player);
+    onFalseStart(player);
     return;
   }
   r.hit[player] = true;
-  handleSerialLine(`RESULT:P${player}:${Math.round(performance.now() - r.t0)}`);
+  onResult(player, Math.round(performance.now() - r.t0));
   if (Object.keys(r.hit).length >= r.n) kbRound = null;
 }
 
-const KB_PLAYER_KEYS = { Space: 1, Enter: 2 };
+function startIfIdle() {
+  if (!$('screen-idle').classList.contains('hidden')) startRound();
+}
+
+const KB_PLAYER_KEYS = { Space: 1, Enter: 2, NumpadEnter: 2 };
 document.addEventListener('keydown', (e) => {
-  const player = KB_PLAYER_KEYS[e.code === 'NumpadEnter' ? 'Enter' : e.code];
+  const player = KB_PLAYER_KEYS[e.code];
   if (!player || e.repeat || e.ctrlKey || e.altKey || e.metaKey) return;
-  const inField = e.target.matches && e.target.matches('input, textarea');
-  if (inField) {
-    // Enter num campo de nome = começar (Espaço continua digitando normalmente)
-    if (e.code === 'Enter' && keyboardMode) { e.preventDefault(); e.target.blur(); handleStartButton(); }
+  if (e.target.matches('input, textarea')) {
+    // Enter no campo de nome = começar (Espaço continua digitando normalmente)
+    if (player === 2) { e.preventDefault(); e.target.blur(); startIfIdle(); }
     return;
   }
-  if (!keyboardMode && $('postConnect').classList.contains('hidden')) return;
-  if (keyboardMode && kbRound) { e.preventDefault(); keyboardPress(player); }
-  else if (e.code === 'Space') { e.preventDefault(); handleStartButton(); }
+  if (kbRound) { e.preventDefault(); playerPress(player); }
+  else if (player === 1) { e.preventDefault(); startIfIdle(); }
 });
 // Espaço/Enter num botão focado só "clica" no keyup — segura isso durante a partida.
 document.addEventListener('keyup', (e) => {
-  if (keyboardMode && (e.code === 'Space' || e.code === 'Enter') && !e.target.matches('input, textarea')) e.preventDefault();
+  if ((e.code === 'Space' || e.code === 'Enter') && !e.target.matches('input, textarea')) e.preventDefault();
 });
-
-function setConnected(ok) {
-  $('connDot').classList.toggle('on', ok);
-  $('connText').textContent = ok
-    ? (keyboardMode ? 'Modo teclado — Espaço = J1, Enter = J2' : simulating ? 'Modo simulação (sem Arduino)' : 'Arduino conectado')
-    : 'Arduino desconectado';
-  $('preConnect').classList.toggle('hidden', ok);
-  $('postConnect').classList.toggle('hidden', !ok);
-}
-
-async function readLoop() {
-  const decoder = new TextDecoderStream();
-  readableClosed = port.readable.pipeTo(decoder.writable);
-  reader = decoder.readable.getReader();
-  let buffer = '';
-  try {
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buffer += value;
-      let idx;
-      while ((idx = buffer.indexOf('\n')) >= 0) {
-        const line = buffer.slice(0, idx).trim();
-        buffer = buffer.slice(idx + 1);
-        if (line) handleSerialLine(line);
-      }
-    }
-  } catch (err) {
-    console.error('Erro na leitura serial:', err);
-    setConnected(false);
-  }
-}
-
-async function sendCommand(cmd) {
-  if (keyboardMode) { keyboardRound(cmd); return; }
-  if (simulating) { simulateRound(cmd); return; }
-  const writer = port.writable.getWriter();
-  await writer.write(new TextEncoder().encode(cmd + '\n'));
-  writer.releaseLock();
-}
-
-function simulateRound(cmd) {
-  const n = Number(cmd.split(':')[1]) || 1;
-  const wait = 1200 + Math.random() * 1500; // mais curto que o real, só pra pré-visualizar
-  setTimeout(() => {
-    handleSerialLine('LIGHT_ON');
-    for (let i = 1; i <= n; i++) {
-      const ms = 180 + Math.floor(Math.random() * 320);
-      setTimeout(() => handleSerialLine(`RESULT:P${i}:${ms}`), 300 + i * 400 + Math.random() * 200);
-    }
-  }, wait);
-}
-
-function handleSerialLine(line) {
-  if (line === 'LIGHT_ON') {
-    onLightOn();
-  } else if (line.startsWith('RESULT:P')) {
-    const [, player, ms] = line.match(/RESULT:P(\d):(\d+)/) || [];
-    if (player) onResult(Number(player), Number(ms));
-  } else if (line.startsWith('FALSE_START:P')) {
-    const [, player] = line.match(/FALSE_START:P(\d)/) || [];
-    onFalseStart(Number(player));
-  } else if (line === 'START_BTN') {
-    handleStartButton();
-  }
-}
-
-// Botão físico de "Começar" na bancada — só dispara se a tela ociosa
-// já estiver pronta (conectado/simulando e não no meio de outra partida).
-function handleStartButton() {
-  const idleVisible = !$('screen-idle').classList.contains('hidden');
-  const ready = !$('postConnect').classList.contains('hidden');
-  if (idleVisible && ready) startRound();
-}
 
 // --- Fluxo do jogo ---
 let pendingResults = {};
@@ -687,6 +573,7 @@ function toggle2p() {
 function startRound() {
   cancelAttract();
   ensureAudio();
+  if (document.activeElement) document.activeElement.blur();
   roundNames = [ $('name1').value.trim() || 'Jogador 1' ];
   if (twoPlayers) roundNames.push($('name2').value.trim() || 'Jogador 2');
   expectedPlayers = roundNames.length;
@@ -699,7 +586,7 @@ function startRound() {
   $('statusText').textContent = 'Prepare-se...';
   $('gameResults').innerHTML = '';
 
-  sendCommand('START:' + expectedPlayers);
+  beginRound(expectedPlayers);
 }
 
 function onLightOn() {
@@ -768,9 +655,6 @@ function scheduleAttract() {
 }
 
 // --- Eventos ---
-$('btnConnect').addEventListener('click', connectArduino);
-$('btnSimulate').addEventListener('click', connectSimulated);
-$('btnKeyboard').addEventListener('click', connectKeyboard);
 $('btnToggle2p').addEventListener('click', toggle2p);
 $('btnStart').addEventListener('click', startRound);
 $('btnMute').addEventListener('click', () => setMuted(!muted));
