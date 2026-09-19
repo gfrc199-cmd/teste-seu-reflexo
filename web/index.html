@@ -190,7 +190,7 @@
   table.leaderboard td.name-cell { font-family: var(--font-display); }
 
   .conn-status {
-    position: fixed; top: 2vh; right: 3vw; font-size: 1.7vh; color: var(--muted);
+    position: fixed; top: 3.6vh; left: calc(3vw + 8vh); font-size: 1.7vh; color: var(--muted);
     display: flex; align-items: center; gap: .6vh;
   }
   .conn-dot {
@@ -322,7 +322,8 @@
     <div class="subtitle">Engenharia Elétrica — Mundo das Profissões</div>
 
     <div id="preConnect">
-      <button class="btn" id="btnConnect">Conectar Arduino</button><br>
+      <button class="btn" id="btnKeyboard">Jogar com o teclado (Espaço)</button><br>
+      <button class="btn secondary" id="btnConnect">Conectar Arduino</button><br>
       <button class="btn ghost" id="btnSimulate">Simular sem Arduino (teste)</button>
     </div>
 
@@ -470,6 +471,8 @@ let port, reader, readableClosed;
 let twoPlayers = false;
 let roundNames = [];
 let simulating = false;
+let keyboardMode = false;
+let kbRound = null; // rodada em andamento no modo teclado: { n, lit, t0, timer, hit }
 
 const $ = id => document.getElementById(id);
 
@@ -562,6 +565,7 @@ async function connectArduino() {
     port = await navigator.serial.requestPort();
     await port.open({ baudRate: 9600 });
     simulating = false;
+    keyboardMode = false;
     setConnected(true);
     readLoop();
   } catch (err) {
@@ -572,12 +576,70 @@ async function connectArduino() {
 function connectSimulated() {
   ensureAudio();
   simulating = true;
+  keyboardMode = false;
   setConnected(true);
 }
 
+// Modo teclado: a própria página sorteia a espera, acende o "AGORA!" e mede o
+// tempo com performance.now() — Espaço = Jogador 1, Enter = Jogador 2.
+function connectKeyboard() {
+  ensureAudio();
+  simulating = false;
+  keyboardMode = true;
+  setConnected(true);
+}
+
+function keyboardRound(cmd) {
+  const n = Number(cmd.split(':')[1]) || 1;
+  clearTimeout(kbRound && kbRound.timer);
+  const round = kbRound = { n, lit: false, t0: 0, hit: {}, timer: null };
+  round.timer = setTimeout(() => {
+    round.lit = true;
+    round.t0 = performance.now();
+    handleSerialLine('LIGHT_ON');
+    // ninguém apertou (ou só um dos dois): não deixa a tela presa
+    setTimeout(() => { if (kbRound === round) { kbRound = null; backToIdle(); } }, 6000);
+  }, 3000 + Math.random() * 5000); // mesma espera de 3 a 8s do firmware
+}
+
+function keyboardPress(player) {
+  const r = kbRound;
+  if (!r || player > r.n || r.hit[player]) return;
+  if (!r.lit) { // apertou antes da luz: falsa largada encerra a rodada
+    clearTimeout(r.timer);
+    kbRound = null;
+    handleSerialLine('FALSE_START:P' + player);
+    return;
+  }
+  r.hit[player] = true;
+  handleSerialLine(`RESULT:P${player}:${Math.round(performance.now() - r.t0)}`);
+  if (Object.keys(r.hit).length >= r.n) kbRound = null;
+}
+
+const KB_PLAYER_KEYS = { Space: 1, Enter: 2 };
+document.addEventListener('keydown', (e) => {
+  const player = KB_PLAYER_KEYS[e.code === 'NumpadEnter' ? 'Enter' : e.code];
+  if (!player || e.repeat || e.ctrlKey || e.altKey || e.metaKey) return;
+  const inField = e.target.matches && e.target.matches('input, textarea');
+  if (inField) {
+    // Enter num campo de nome = começar (Espaço continua digitando normalmente)
+    if (e.code === 'Enter' && keyboardMode) { e.preventDefault(); e.target.blur(); handleStartButton(); }
+    return;
+  }
+  if (!keyboardMode && $('postConnect').classList.contains('hidden')) return;
+  if (keyboardMode && kbRound) { e.preventDefault(); keyboardPress(player); }
+  else if (e.code === 'Space') { e.preventDefault(); handleStartButton(); }
+});
+// Espaço/Enter num botão focado só "clica" no keyup — segura isso durante a partida.
+document.addEventListener('keyup', (e) => {
+  if (keyboardMode && (e.code === 'Space' || e.code === 'Enter') && !e.target.matches('input, textarea')) e.preventDefault();
+});
+
 function setConnected(ok) {
   $('connDot').classList.toggle('on', ok);
-  $('connText').textContent = ok ? (simulating ? 'Modo simulação (sem Arduino)' : 'Arduino conectado') : 'Arduino desconectado';
+  $('connText').textContent = ok
+    ? (keyboardMode ? 'Modo teclado — Espaço = J1, Enter = J2' : simulating ? 'Modo simulação (sem Arduino)' : 'Arduino conectado')
+    : 'Arduino desconectado';
   $('preConnect').classList.toggle('hidden', ok);
   $('postConnect').classList.toggle('hidden', !ok);
 }
@@ -606,6 +668,7 @@ async function readLoop() {
 }
 
 async function sendCommand(cmd) {
+  if (keyboardMode) { keyboardRound(cmd); return; }
   if (simulating) { simulateRound(cmd); return; }
   const writer = port.writable.getWriter();
   await writer.write(new TextEncoder().encode(cmd + '\n'));
@@ -831,6 +894,7 @@ async function visitorReadLoop() {
 // --- Eventos ---
 $('btnConnect').addEventListener('click', connectArduino);
 $('btnSimulate').addEventListener('click', connectSimulated);
+$('btnKeyboard').addEventListener('click', connectKeyboard);
 $('btnToggle2p').addEventListener('click', toggle2p);
 $('btnStart').addEventListener('click', startRound);
 $('btnMute').addEventListener('click', () => setMuted(!muted));
